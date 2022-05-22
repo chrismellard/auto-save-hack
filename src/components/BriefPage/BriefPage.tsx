@@ -13,7 +13,7 @@ import {
     throttleTime,
     partition,
     map,
-    mergeMap, from
+    mergeMap, from, zip, combineLatest, concatAll, merge, race, reduce, scan
 } from "rxjs";
 import {UpdateBriefMutationVariables} from "../../generated/proxy";
 import {
@@ -35,10 +35,6 @@ const initialBrief: UpdateBriefMutationVariables = {
     }
 };
 
-const briefComparator = (p: UpdateBriefMutationVariables, c: UpdateBriefMutationVariables): boolean => {
-    return p.brief.briefName === c.brief.briefName && p.brief.briefDescription === c.brief.briefDescription;
-}
-
 const initialFormState = {
     briefName: '',
     briefDescription: '',
@@ -48,47 +44,65 @@ const initialFormState = {
 
 const sdk = apiSdk(new GraphQLClient('http://localhost:3000/graphql'));
 
+const orderTypeMapper = (x: UpdateBriefMutationVariables): UpdateOrderMutationVariables => {
+    return {order: {name: x.brief.briefName, description: x.brief.briefDescription}}
+}
+const orderComparator = (prev: UpdateOrderMutationVariables, current: UpdateOrderMutationVariables) => {
+    return prev.order.name === current.order.name && prev.order.description === current.order.description
+}
+const conceptTypeMapper = (x: UpdateBriefMutationVariables): UpdateConceptMutationVariables => {
+    return {concept: {name: x.brief.concept.conceptName, description: x.brief.concept.conceptDescription}}
+}
+const conceptComparator = (prev: UpdateConceptMutationVariables, current: UpdateConceptMutationVariables) => {
+    return prev.concept.name === current.concept.name && prev.concept.description === current.concept.description
+}
+
+const abstractPotato = <T,R>(inputObservable: Observable<T>,
+                              comparator: ((prev: T, current: T) => boolean),
+                              apiCall: (payload: T) => Promise<R> ): [Observable<R>, Observable<number>] => {
+
+    const throttledObservable = inputObservable.pipe(
+        throttleTime(3000, asyncScheduler, {leading: false, trailing: true}),
+    )
+
+    const sideEffectedObservable = throttledObservable.pipe(
+        mergeMap(x => from(apiCall(x))), // TODO - should probably be a concatMap - will test
+    )
+    const savingCountObservable = merge(
+        throttledObservable.pipe(
+            map(x => 1),
+        ),
+        sideEffectedObservable.pipe(
+            map(x => -1),
+        )
+    ).pipe(
+        scan((a, c) => a + c, 0),
+    )
+    return [sideEffectedObservable, savingCountObservable];
+}
 
 export const BriefPage = () => {
 
     const [saved, setSaved] = useState(false)
     const [form, setForm] = useState(initialFormState);
 
-    const [splitObservable, setSplitObservableState] = useObservable(initialBrief);
+    const [observable, setSplitObservableState] = useObservable(initialBrief);
 
-    const updateOrderObservable = splitObservable.pipe(
-        map<UpdateBriefMutationVariables, UpdateOrderMutationVariables>(x => {
-            return {order: {name: x.brief.briefName, description: x.brief.briefDescription}}
-        }),
-        distinctUntilChanged((prev, current) => {
-            return prev.order.name === current.order.name && prev.order.description === current.order.description
-        }),
-        throttleTime(3000, asyncScheduler, {leading: false, trailing: true}),
-        mergeMap(x => from(sdk.UpdateOrder(x)))
-    )
+    const [updateOrderObservable, orderSavedObservable] = abstractPotato(observable.pipe(map(x => orderTypeMapper(x))), orderComparator, sdk.UpdateOrder);
+    const [updateConceptObservable, conceptSavedObservable] = abstractPotato(observable.pipe(map(x => conceptTypeMapper(x))), conceptComparator, sdk.UpdateConcept);
 
-    const updateConceptObservable = splitObservable.pipe(
-        map<UpdateBriefMutationVariables, UpdateConceptMutationVariables>(x => {
-            return {concept: {name: x.brief.concept.conceptName, description: x.brief.concept.conceptDescription}}
-        }),
-        distinctUntilChanged((prev, current) => {
-            console.log(prev);
-            console.log(current);
-            return prev.concept.name === current.concept.name && prev.concept.description === current.concept.description
-        }),
-        throttleTime(3000, asyncScheduler, {leading: false, trailing: true}),
-        mergeMap(x => from(sdk.UpdateConcept(x)))
-    )
 
     useEffect(() => {
-        const subscription = updateOrderObservable.subscribe(o => console.log('save order'));
+        const subscription = orderSavedObservable.subscribe(o => {
+            console.log(o);
+        });
         return () => {
             subscription.unsubscribe();
         }
     }, [])
 
     useEffect(() => {
-        const subscription = updateConceptObservable.subscribe(o => console.log('save concept'));
+        const subscription = updateConceptObservable.subscribe(o => console.log(o.UpdateConcept));
         return () => {
             subscription.unsubscribe();
         }

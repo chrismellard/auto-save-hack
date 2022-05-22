@@ -28,18 +28,34 @@ const initialBrief: UpdateBriefMutationVariables = {
     brief: {
         briefName: '',
         briefDescription: '',
-        concept: {
-            conceptName: '',
-            conceptDescription: ''
-        }
+        // concepts: [
+        //     {
+        //         conceptName: '',
+        //         conceptDescription: ''
+        //     },
+        //     {
+        //         conceptName: '',
+        //         conceptDescription: ''
+        //     }
+        // ]
     }
 };
 
 const initialFormState = {
     briefName: '',
     briefDescription: '',
-    conceptName: '',
-    conceptDescription: '',
+    // concepts: [
+    //     {
+    //         conceptName: '',
+    //         conceptDescription: '',
+    //     },
+    //
+    //     {
+    //         conceptName: '',
+    //         conceptDescription: '',
+    //     }
+    // ]
+
 }
 
 const sdk = apiSdk(new GraphQLClient('http://localhost:3000/graphql'));
@@ -50,16 +66,16 @@ const orderTypeMapper = (x: UpdateBriefMutationVariables): UpdateOrderMutationVa
 const orderComparator = (prev: UpdateOrderMutationVariables, current: UpdateOrderMutationVariables) => {
     return prev.order.name === current.order.name && prev.order.description === current.order.description
 }
-const conceptTypeMapper = (x: UpdateBriefMutationVariables): UpdateConceptMutationVariables => {
-    return {concept: {name: x.brief.concept.conceptName, description: x.brief.concept.conceptDescription}}
-}
-const conceptComparator = (prev: UpdateConceptMutationVariables, current: UpdateConceptMutationVariables) => {
-    return prev.concept.name === current.concept.name && prev.concept.description === current.concept.description
-}
+// const conceptTypeMapper = (x: UpdateBriefMutationVariables): UpdateConceptMutationVariables => {
+//     return {concept: {name: x.brief.concept.conceptName, description: x.brief.concept.conceptDescription}}
+// }
+// const conceptComparator = (prev: UpdateConceptMutationVariables, current: UpdateConceptMutationVariables) => {
+//     return prev.concept.name === current.concept.name && prev.concept.description === current.concept.description
+// }
 
-const abstractPotato = <T,R>(inputObservable: Observable<T>,
+const abstractPotato = <T, R>(inputObservable: Observable<T>,
                               comparator: ((prev: T, current: T) => boolean),
-                              apiCall: (payload: T) => Promise<R> ): [Observable<R>, Observable<number>] => {
+                              apiCall: (payload: T) => Promise<R>): [Observable<R>, Observable<number>] => {
 
     const throttledObservable = inputObservable.pipe(
         throttleTime(3000, asyncScheduler, {leading: false, trailing: true}),
@@ -83,13 +99,12 @@ const abstractPotato = <T,R>(inputObservable: Observable<T>,
 
 export const BriefPage = () => {
 
-    const [saved, setSaved] = useState(false)
     const [form, setForm] = useState(initialFormState);
 
-    const [observable, setSplitObservableState] = useObservable(initialBrief);
+    const [observable, setObservableState] = useObservable(initialBrief);
 
     const [updateOrderObservable, orderSavedObservable] = abstractPotato(observable.pipe(map(x => orderTypeMapper(x))), orderComparator, sdk.UpdateOrder);
-    const [updateConceptObservable, conceptSavedObservable] = abstractPotato(observable.pipe(map(x => conceptTypeMapper(x))), conceptComparator, sdk.UpdateConcept);
+    // const [updateConceptObservable, conceptSavedObservable] = abstractPotato(observable.pipe(map(x => conceptTypeMapper(x))), conceptComparator, sdk.UpdateConcept);
 
 
     useEffect(() => {
@@ -102,18 +117,27 @@ export const BriefPage = () => {
     }, [])
 
     useEffect(() => {
-        const subscription = updateConceptObservable.subscribe(o => console.log(o.UpdateConcept));
+        const subscription = updateOrderObservable.subscribe(o => {
+            console.log(o);
+        });
         return () => {
             subscription.unsubscribe();
         }
     }, [])
 
+    // useEffect(() => {
+    //     const subscription = updateConceptObservable.subscribe(o => console.log(o.UpdateConcept));
+    //     return () => {
+    //         subscription.unsubscribe();
+    //     }
+    // }, [])
+
     useEffect(() => {
-        setSplitObservableState({
+        setObservableState({
             brief: {
                 briefName: form.briefName,
                 briefDescription: form.briefDescription,
-                concept: {conceptName: form.conceptName, conceptDescription: form.conceptDescription}
+                // concepts: form.concepts.map(x => {return {conceptName: x.conceptName, conceptDescription: x.conceptDescription}})
             }
         });
     });
@@ -122,6 +146,10 @@ export const BriefPage = () => {
         setForm({...form, [event.target.id]: event.target.value});
     };
 
+    // const handleConceptChange = (index: number, event: React.ChangeEvent<HTMLInputElement>) => {
+    //
+    // }
+
     return (
         <div>
             <form>
@@ -129,15 +157,19 @@ export const BriefPage = () => {
                                                    type="text"/></label>
                 <label htmlFor="description">Description: <input id="briefDescription" value={form.briefDescription}
                                                                  onChange={handleChange} type="text"/></label>
-                <label htmlFor="conceptName">Concept name: <input id="conceptName" value={form.conceptName}
-                                                                  onChange={handleChange} type="text"/></label>
-                <label htmlFor="conceptDescription">Concept description: <input id="conceptDescription"
-                                                                                value={form.conceptDescription}
-                                                                                onChange={handleChange}
-                                                                                type="text"/></label>
+                {/*{form.concepts.map((input, index) => {*/}
+                {/*    return <div key={index}>*/}
+                {/*        <label htmlFor="conceptName">Concept name: <input id="conceptName" value={input.conceptName}*/}
+                {/*                                                          onChange={event => handleConceptChange(index, event)} type="text"/></label>*/}
+                {/*        <label htmlFor="conceptDescription">Concept description: <input id="conceptDescription"*/}
+                {/*                                                                        value={input.conceptDescription}*/}
+                {/*                                                                        onChange={event => handleConceptChange(index, event)}*/}
+                {/*                                                                        type="text"/></label>*/}
+                {/*    </div>*/}
+                {/*})}*/}
+
 
             </form>
-            <p>Saved is {saved ? 'saved' : 'unsaved'}</p>
         </div>
     )
 }

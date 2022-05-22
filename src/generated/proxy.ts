@@ -38,7 +38,7 @@ export type Query = {
 export type UpdateBriefInput = {
   briefDescription: Scalars['String'];
   briefName: Scalars['String'];
-  concept: ConceptInput;
+  concepts?: InputMaybe<Array<ConceptInput>>;
 };
 
 export type UpdateBriefMutationVariables = Exact<{

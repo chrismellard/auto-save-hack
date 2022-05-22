@@ -1,28 +1,19 @@
-import React, {useCallback, useEffect, useState} from 'react';
-import debounce from 'lodash.debounce';
-import throttle from 'lodash.throttle';
+import React, {useEffect, useState} from 'react';
 import {GraphQLClient} from "graphql-request";
 import {
     asyncScheduler,
-    BehaviorSubject,
-    distinctUntilChanged,
-    interval,
     Observable,
-    of,
-    tap,
     throttleTime,
-    partition,
     map,
-    mergeMap, from, zip, combineLatest, concatAll, merge, race, reduce, scan
+    mergeMap, from, merge, scan
 } from "rxjs";
 import {UpdateBriefMutationVariables} from "../../generated/proxy";
 import {
     getSdk as apiSdk,
-    UpdateConceptMutationVariables,
     UpdateOrderMutationVariables
 } from "../../generated/api";
 
-import {useObservable, useThrottledObservable} from "./observable";
+import {useObservable} from "./observable";
 
 const initialBrief: UpdateBriefMutationVariables = {
     brief: {

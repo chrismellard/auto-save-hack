@@ -1,0 +1,18 @@
+type Mutation {
+    UpdateBrief(input: UpdateBriefInput): Boolean!
+}
+
+input UpdateBriefInput {
+    briefName: String!
+    briefDescription: String!
+    concept: ConceptInput!
+}
+
+input ConceptInput {
+    conceptName: String!
+    conceptDescription: String!
+}
+
+type Query {
+    Brief: Boolean
+}

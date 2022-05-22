@@ -1,0 +1,18 @@
+type Mutation {
+    UpdateOrder(input: UpdateOrderInput): Boolean!
+    UpdateConcept(input: UpdateConceptInput): Boolean!
+}
+
+input UpdateConceptInput {
+    name: String!
+    description: String!
+}
+
+input UpdateOrderInput {
+    name: String!
+    description: String!
+}
+
+type Query {
+    Order: Boolean
+}

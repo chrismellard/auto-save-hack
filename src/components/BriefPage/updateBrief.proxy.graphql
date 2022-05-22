@@ -1,0 +1,3 @@
+mutation updateBrief($brief: UpdateBriefInput!) {
+    UpdateBrief(input: $brief)
+}

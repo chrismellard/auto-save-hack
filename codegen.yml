@@ -1,0 +1,19 @@
+overwrite: true
+
+generates:
+  src/generated/api.ts:
+    schema: "./src/graphql/api/schema.graphql"
+    documents:
+      - "**/*.api.graphql"
+    plugins:
+      - "typescript"
+      - "typescript-operations"
+      - "typescript-graphql-request"
+  src/generated/proxy.ts:
+    schema: "./src/graphql/proxy/proxy.graphql"
+    documents:
+      - "**/*.proxy.graphql"
+    plugins:
+      - "typescript"
+      - "typescript-operations"
+      - "typescript-graphql-request"

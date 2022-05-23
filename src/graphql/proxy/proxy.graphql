@@ -5,7 +5,7 @@ type Mutation {
 input UpdateBriefInput {
     briefName: String!
     briefDescription: String!
-    concepts: [ConceptInput!]
+    concepts: [ConceptInput!]!
 }
 
 input ConceptInput {

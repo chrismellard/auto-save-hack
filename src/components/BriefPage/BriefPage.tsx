@@ -2,27 +2,35 @@ import React, {useEffect, useState} from 'react';
 import {GraphQLClient} from "graphql-request";
 import {
     asyncScheduler,
-    Observable,
-    throttleTime,
-    map,
-    from,
+    catchError,
+    combineLatest,
     concatMap,
     distinctUntilChanged,
-    groupBy,
+    filter,
     flatMap,
+    from,
+    generate,
+    groupBy,
+    map,
+    merge,
+    Observable,
+    of,
+    retry,
     tap,
-    combineLatest, generate, zip, Subscription
+    throttleTime,
+    zip
 } from "rxjs";
 import {ConceptInput, UpdateBriefMutationVariables} from "../../generated/proxy";
-import {
-    getSdk as apiSdk, UpdateConceptMutationVariables,
-    UpdateOrderMutationVariables
-} from "../../generated/api";
+import {getSdk as apiSdk, UpdateConceptMutationVariables, UpdateOrderMutationVariables} from "../../generated/api";
 
 import {useObservable} from "./observable";
 import set from 'lodash.set';
 
-const initialBrief: UpdateBriefMutationVariables = {
+type SequenceType = {
+    sequenceNumber: number
+}
+
+const initialBrief: UpdateBriefMutationVariables & SequenceType = {
     brief: {
         briefName: '',
         briefDescription: '',
@@ -36,7 +44,8 @@ const initialBrief: UpdateBriefMutationVariables = {
                 conceptDescription: ''
             }
         ]
-    }
+    },
+    sequenceNumber: 0
 };
 
 const initialFormState = {
@@ -58,8 +67,8 @@ const initialFormState = {
 
 const sdk = apiSdk(new GraphQLClient('http://localhost:3000/graphql'));
 
-const orderTypeMapper = (x: UpdateBriefMutationVariables): UpdateOrderMutationVariables => {
-    return {order: {name: x.brief.briefName, description: x.brief.briefDescription}}
+const orderTypeMapper = (x: UpdateBriefMutationVariables & SequenceType): UpdateOrderMutationVariables & { sequenceNumber: number } => {
+    return {order: {name: x.brief.briefName, description: x.brief.briefDescription}, sequenceNumber: x.sequenceNumber}
 }
 const orderComparator = (prev: UpdateOrderMutationVariables, current: UpdateOrderMutationVariables) => {
     return prev.order.name === current.order.name && prev.order.description === current.order.description
@@ -76,39 +85,52 @@ interface IndexedConcept {
     concept: ConceptInput
 }
 
-const AutoSaveObservable = <T,R>(observable: Observable<T>,
-                    comparator: (prev: T, curr: T) => boolean,
-                    sideEffect: (input: T) => Promise<R>): Observable<[R, number]> => {
-    const preThrottleUpdateOrderObservable = zip(
-        observable.pipe(
-            distinctUntilChanged(comparator),
-        ),
-        generate({
-            initialState: 1,
-            condition: (x: number) => x < 1000000,
-            iterate: (x: number) => x + 1
-        })
+interface Retry {
+    retrying: boolean
+}
+
+let counter = 0;
+
+const AutoSaveObservable = <T extends { sequenceNumber: number }, R>(observable: Observable<T>,
+                                                                     comparator: (prev: T, curr: T) => boolean,
+                                                                     sideEffect: (input: T) => Promise<R>): Observable<[R, number] | Retry> => {
+    const preThrottleUpdateOrderObservable = observable.pipe(
+        tap(x => console.log(x)),
+        distinctUntilChanged(comparator),
     )
 
     const observableApiCall = preThrottleUpdateOrderObservable.pipe(
         throttleTime(3000, asyncScheduler, {leading: false, trailing: true}),
-        tap(x => console.log('throttle open')),
         concatMap(x => zip(
-            from(sideEffect(x[0])),
-            from([x[1]]),
+            from(sideEffect(x)),
+            from([x.sequenceNumber]),
         )),
     );
 
-    const reconciledApiCall = combineLatest(
-        preThrottleUpdateOrderObservable.pipe(
-            map(x => x[1])
-        ),
-        observableApiCall
-    ).pipe(
-        map<[number, [R, number]], [R, number]>( x => [x[1][0], x[0] - x[1][1]])
+    function inputIsRetry(input: [R, number] | Retry): input is Retry {
+        return (input as Retry).retrying !== undefined;
+    }
+
+    const trapError = observableApiCall.pipe(
+        catchError<[R, number], Observable<Retry>>(x => of({retrying: true})),
+        filter(inputIsRetry),
     )
 
-    return reconciledApiCall;
+    const reconciledApiCall = combineLatest(
+        preThrottleUpdateOrderObservable.pipe(
+            map(x => x.sequenceNumber)
+        ),
+        observableApiCall.pipe(
+            retry({
+                count: 3,
+                delay: 1000
+            })
+        )
+    ).pipe(
+        map<[number, [R, number]], [R, number]>(x => [x[1][0], x[0] - x[1][1]])
+    )
+
+    return merge(reconciledApiCall, trapError);
 }
 
 export const BriefPage = () => {
@@ -116,12 +138,11 @@ export const BriefPage = () => {
     const [form, setForm] = useState(initialFormState);
 
     const [observable, setObservableState] = useObservable(initialBrief);
-
     const updateOrderApiCall = AutoSaveObservable(
         observable.pipe(map(orderTypeMapper)),
         orderComparator,
         sdk.UpdateOrder
-        );
+    );
 
     const conceptGroupedObservables = observable.pipe(
         map(x => x.brief.concepts),
@@ -133,31 +154,32 @@ export const BriefPage = () => {
         flatMap(x => x),
         groupBy<IndexedConcept, number>(x => x.key),
     )
+    //
+    // useEffect(() => {
+    //     const subscriptions: Subscription[] = []
+    //     const subscription = conceptGroupedObservables.subscribe(o => {
+    //         const p = AutoSaveObservable(
+    //             o.pipe(map(conceptTypeMapper)),
+    //             conceptComparator,
+    //             sdk.UpdateConcept
+    //         );
+    //         const innerSubscription = p.subscribe(x => console.log(x));
+    //         subscriptions.push(innerSubscription);
+    //     });
+    //     subscriptions.push(subscription);
+    //     return () => {
+    //         subscriptions.forEach(s => s.unsubscribe());
+    //     }
+    // }, [])
+
 
     useEffect(() => {
-        const subscriptions: Subscription[] = []
-        const subscription = conceptGroupedObservables.subscribe(o => {
-            const p = AutoSaveObservable(
-                o.pipe(map(conceptTypeMapper)),
-                conceptComparator,
-                sdk.UpdateConcept
-            );
-            const innerSubscription = p.subscribe(x => console.log(x));
-            subscriptions.push(innerSubscription);
-        });
-        subscriptions.push(subscription);
-        return () => {
-            subscriptions.forEach(s => s.unsubscribe());
-        }
-    }, [])
-
-
-    useEffect(() => {
-        const subscription = updateOrderApiCall.subscribe(o => console.log(o));
+        const subscription = updateOrderApiCall.subscribe(o => console.log(o), error => console.log('i should not be here unless retry fails'));
         return () => {
             subscription.unsubscribe();
         }
     }, [])
+
 
     useEffect(() => {
         setObservableState({
@@ -167,7 +189,8 @@ export const BriefPage = () => {
                 concepts: form.concepts.map(x => {
                     return {conceptName: x.conceptName, conceptDescription: x.conceptDescription}
                 })
-            }
+            },
+            sequenceNumber: counter++
         });
     });
 

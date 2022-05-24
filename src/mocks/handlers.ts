@@ -20,6 +20,7 @@ export const handlers = [
         const updateOrderResponse: UpdateOrderMutation = {
             UpdateOrder: true
         }
-        return res(ctx.delay(3000), ctx.data(updateOrderResponse));
+        const statusCode = Math.random() > 0.75 ? 500 : 200;
+        return res(ctx.status(statusCode), ctx.delay(3000), ctx.data(updateOrderResponse));
     }),
 ]

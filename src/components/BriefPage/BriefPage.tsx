@@ -95,7 +95,6 @@ const AutoSaveObservable = <T extends { sequenceNumber: number }, R>(observable:
                                                                      comparator: (prev: T, curr: T) => boolean,
                                                                      sideEffect: (input: T) => Promise<R>): Observable<[R, number] | Retry> => {
     const preThrottleUpdateOrderObservable = observable.pipe(
-        tap(x => console.log(x)),
         distinctUntilChanged(comparator),
     )
 
